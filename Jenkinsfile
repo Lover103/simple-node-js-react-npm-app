@@ -1,19 +1,100 @@
-#!groovy
+pipeline {
+    agent { docker 'node' }
+    options {
+        gitLabConnection('gitlab-bigdata')
+        disableConcurrentBuilds()
+        skipDefaultCheckout()
+        timeout(time: 60, unit: 'MINUTES')
+    }
 
-// 在多分支构建下，严格规定Jenkinsfile只存在可以发版的分支上
+    triggers{
+        gitlab(
+            triggerOnPush: true, 
+            triggerOnMergeRequest: true,
+            branchFilterType: 'All'
+        )
+    }
 
-// 引用在jenkins已经全局定义好的library
-library 'objcoding-pipeline-library'
-    def map = [:]
+    stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    echo "1.Prepare Stage"
 
-    // 远程管理节点地址（用于执行发版）
-    map.put('REMOTE_HOST','xxx.xx.xx.xxx')
-    // 项目gitlab代码地址
-    map.put('REPO_URL','https://github.com/Lover103/simple-node-js-react-npm-app.git')
-    // 分支名称
-    map.put('BRANCH_NAME','master')
-    // 服务栈名称
-    map.put('STACK_NAME','vipay')
+                    checkout scm
+                    updateGitlabCommitStatus name: 'build', state: 'pending'
+                }
+            }
+        }
 
-// 调用library中var目录下的build.groovy脚本
-deploy(map)
+        stage('Compile And UnitTest') {
+            steps {
+                script {
+                    echo "2.Compile the code"
+
+                    try {
+                        sh "node --version"
+                        sh 'npm config set registry http://registry.npm.taobao.org/'
+                        sh 'npm install'
+                        sh 'npm run build'
+                    } catch(Exception exception){
+                        updateGitlabCommitStatus name: 'build', state: exception
+                        throw exception;
+                    } finally {
+                        updateGitlabCommitStatus name: 'build', state: 'failed'
+                    }
+
+                    updateGitlabCommitStatus name: 'build', state: 'success'
+                    updateGitlabCommitStatus name: 'Basic Quality Check', state: 'pending'
+                }
+            }
+        }
+
+        stage('测试环境部署') {
+            when { branch 'master' }
+            steps {
+                script {
+                  echo "测试环境部署"
+                }
+            }
+        }
+
+        stage('正式环境部署') {
+            when { branch 'developer' }
+            steps {
+                script {
+                  echo "正式环境部署"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // deleteDir()
+            echo 'Test run completed'
+            cucumber buildStatus: 'UNSTABLE', failedFeaturesNumber: 999, failedScenariosNumber: 999, failedStepsNumber: 3, fileIncludePattern: '**/*.json', skippedStepsNumber: 999
+        }
+        success {
+            echo 'Successfully!'
+            updateGitlabCommitStatus name: 'build', state: 'success'
+            // mail(
+            //     from: "quan.shi@zymobi.com",
+            //     to: "quan.shi@zymobi.com",
+            //     subject: "That build passed.",
+            //     body: "Nothing to see here"
+            // )
+        }
+        failure {
+            echo 'Failed!'
+            updateGitlabCommitStatus name: 'build', state: 'failed'
+        }
+        unstable {
+            echo 'This will run only if the run was marked as unstable'
+        }
+        changed {
+            echo 'This will run only if the state of the Pipeline has changed'
+            echo 'For example, if the Pipeline was previously failing but is now successful'
+        }
+    }
+}
