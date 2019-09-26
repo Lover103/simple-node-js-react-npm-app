@@ -19,7 +19,7 @@ pipeline {
         stage('Prepare') {
             steps {
                 script {
-                    echo "1.Prepare Stage"
+                    echo "Prepare Stage"
 
                     checkout scm
                     updateGitlabCommitStatus name: 'build', state: 'pending'
@@ -30,7 +30,7 @@ pipeline {
         stage('Compile And UnitTest') {
             steps {
                 script {
-                    echo "2.Compile the code"
+                    echo "Compile the code"
 
                     try {
                         sh "node --version"
@@ -50,8 +50,43 @@ pipeline {
             }
         }
 
+        stage('Basic Quality Report') {
+            steps {
+                script {
+                    echo "Basic quality report"
+                }
+            }
+        }
+
+        stage('Basic Quality Check') {
+            steps {
+                script {
+                    echo "Check quality threshold"
+
+                    try {
+                        echo "Just skip check for demo, but should check when work"
+                    } catch(Exception ex){
+                        updateGitlabCommitStatus name: 'Basic Quality Check', state: 'failed'
+                        throw ex;
+                    } finally {
+
+                    }
+                    updateGitlabCommitStatus name: 'Basic Quality Check', state: 'success'
+                }
+            }
+        }
+
+        stage('SonarQube analysis') {
+            steps {
+                script {
+                    updateGitlabCommitStatus name: 'SonarQube analysis', state: 'pending'
+                }
+            }
+        }
+    }
+
         stage('测试环境部署') {
-            when { branch 'master' }
+            when { branch 'developer' }
             steps {
                 script {
                   echo "测试环境部署"
@@ -60,7 +95,7 @@ pipeline {
         }
 
         stage('正式环境部署') {
-            when { branch 'developer' }
+            when { branch 'master' }
             steps {
                 script {
                   echo "正式环境部署"
